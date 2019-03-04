@@ -1,0 +1,7 @@
+# setup using:
+# pip install -r requirements.txt
+
+ruamel.yaml
+munch
+colorama
+termcolor
