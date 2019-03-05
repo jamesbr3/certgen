@@ -14,15 +14,31 @@ import subprocess
 #import yaml
 from ruamel.yaml import YAML
 yaml = YAML()
+from munch import Munch
+
+from colorama import Fore, Back, Style
+#from termcolor import colored
 
 #
 # load YAML config; return as nested python object
 #
-def load_config(config_file):
-  # pip install munch
-  from munch import Munch
+def load_config(config_file, params):  
+  
   with open(config_file) as f:
-    y = yaml.load(f)
+    p = re.compile('.*\".*{.*}.*\"')
+    conf = ""
+    for line in f:
+      if p.match(line):
+        try:
+          line = line.format(**params)
+        except KeyError as e:
+          print(f'{e} must be defined with --param option')
+          exit(1)
+      conf = conf + line
+
+    #print(conf)
+    #exit(0)
+    y = yaml.load(conf)
     return Munch.fromDict(y)
 
 CERT_ROLES = {
@@ -68,14 +84,24 @@ def extensions_str(cert):
 
   return exts
 
+#
+# 
+#
+def mkpath(file):
+  file = os.path.normpath(file)
+  parts = os.path.split(file)
+  os.makedirs(parts[0], exist_ok=True)
+  return file
+
 def create_cert(config, cert, executor):
    
   store = config.stores[cert.store]
 
-  keyfile  = os.path.normpath(f'{WORK_DIR}/{cert.alias}.key')
-  csrfile  = os.path.normpath(f'{WORK_DIR}/{cert.alias}.csr')
-  crtfile  = os.path.normpath(f'{WORK_DIR}/{cert.alias}.crt')
-  rootfile = os.path.normpath(f'{WORK_DIR}/root.crt')
+  outfile  = mkpath(store.file)
+  keyfile  = mkpath(f'{WORK_DIR}/{cert.alias}.key')
+  csrfile  = mkpath(f'{WORK_DIR}/{cert.alias}.csr')
+  crtfile  = mkpath(f'{WORK_DIR}/{cert.alias}.crt')
+  rootfile = mkpath(f'{WORK_DIR}/root.crt')
   
   # find the signer. If it is not explicitly in config
   if '.' in cert.issuer:
@@ -115,7 +141,7 @@ def create_cert(config, cert, executor):
   #executor(cmd4)
 
   # update with the signed copy
-  cmd4 = f'keytool -importcert -alias {cert.alias} -keystore {store.file} -storepass {store.password} -noprompt -trustcacerts -keypass {cert.key.password} -v'
+  cmd4 = f'keytool -importcert -alias {cert.alias} -keystore {outfile} -storepass {store.password} -noprompt -trustcacerts -keypass {cert.key.password} -v'
 
   cat = 'type' if os.name == 'nt' else 'cat'  
   cmd4 = f'{cat} {crtfile} {rootfile} | {cmd4}'
@@ -154,14 +180,13 @@ def generate(config, executor):
   # generate the certificates
   for alias in config.certificates:
     cert = config.certificates[alias]                  
-    print(f'@echo ' + '-'*100)
-    print(f'@echo generating: {cert.alias} - "{cert.subject}"')
-    print(f'@echo ' + '-'*100)
+    print(Fore.BLACK + Style.BRIGHT + f'@echo ' + '-'*100)
+    print(Fore.BLACK + Style.BRIGHT + f'@echo generating: {cert.alias} - "{cert.subject}"')
+    print(Fore.BLACK + Style.BRIGHT +  f'@echo ' + '-'*100)
+    print(Style.RESET_ALL)
     create_cert(config, cert, executor)
 
-def execute(cmd):
-  from colorama import Fore, Back, Style
-  from termcolor import colored
+def execute(cmd):  
 
   print(Fore.CYAN + cmd, flush=True)
   print(Style.RESET_ALL)
@@ -169,8 +194,10 @@ def execute(cmd):
   
   #print('\033[31m' + 'hello')
 
-  result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, shell=True)#stdout=subprocess.PIPE)
+  result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)#stdout=subprocess.PIPE)
   print(result.stdout.decode('utf-8'))
+  print(result.stderr.decode('utf-8'))
+  #print(Style.RESET_ALL)
   #print(result.stdout.read())
 
 def main(args):
@@ -182,7 +209,17 @@ def main(args):
   WORK_DIR = args.workdir
   os.makedirs(WORK_DIR, exist_ok=True)
 
-  cert_config = load_config(args.config)
+  # build diction of parameter substitutions
+  args.params = [y for x in args.params for y in x]  
+  params = {}
+
+  for p in args.params:
+    nv = p.split(':')
+    params[nv[0]] = nv[1]
+
+  print(f'Parameter substitutions: {args.params}')
+
+  cert_config = load_config(args.config, params)
 
   if args.execute:
     executor = execute
@@ -195,6 +232,8 @@ parser = argparse.ArgumentParser('Certificate hierarchy generator')
 parser.add_argument('--config',   help = 'configuration file in YAML format', required=True)
 parser.add_argument('--workdir',  help = 'working directory', dest='workdir', default='work')
 parser.add_argument('--execute',  help = 'working directory', dest='execute', default=False, action='store_true')
+parser.add_argument('--param',  help = 'parameter substitutions. [A:B]', dest='params', nargs='+', action='append')
+#parser.add_argument('--render',  help = 'render config and exit', default=False, action='store_true')
 args = parser.parse_args()  
 
 main(args)
