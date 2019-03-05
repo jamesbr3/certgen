@@ -32,7 +32,7 @@ def load_config(config_file, params):
         try:
           line = line.format(**params)
         except KeyError as e:
-          print(f'{e} must be defined with --param option')
+          print(f'{e} must be defined: --param {str(e)[1:-1]}:<value> ')
           exit(1)
       conf = conf + line
 
@@ -212,12 +212,10 @@ def main(args):
   # build diction of parameter substitutions
   args.params = [y for x in args.params for y in x]  
   params = {}
-
   for p in args.params:
     nv = p.split(':')
     params[nv[0]] = nv[1]
-
-  print(f'Parameter substitutions: {args.params}')
+  print(f'Parameter substitutions: {params}')
 
   cert_config = load_config(args.config, params)
 
@@ -232,7 +230,7 @@ parser = argparse.ArgumentParser('Certificate hierarchy generator')
 parser.add_argument('--config',   help = 'configuration file in YAML format', required=True)
 parser.add_argument('--workdir',  help = 'working directory', dest='workdir', default='work')
 parser.add_argument('--execute',  help = 'working directory', dest='execute', default=False, action='store_true')
-parser.add_argument('--param',  help = 'parameter substitutions. [A:B]', dest='params', nargs='+', action='append')
+parser.add_argument('--param',  help = 'parameter substitutions. [A:B]', dest='params', nargs='+', action='append', default=[])
 #parser.add_argument('--render',  help = 'render config and exit', default=False, action='store_true')
 args = parser.parse_args()  
 
